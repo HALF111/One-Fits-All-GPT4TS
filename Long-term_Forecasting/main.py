@@ -78,10 +78,13 @@ parser.add_argument('--tmax', type=int, default=10)
 parser.add_argument('--itr', type=int, default=3)
 parser.add_argument('--cos', type=int, default=0)
 
+parser.add_argument('--random_seed', type=int, default=2021)
+
 
 
 args = parser.parse_args()
 
+# 季节性映射mapping
 SEASONALITY_MAP = {
    "minutely": 1440,
    "10_minutes": 144,
@@ -98,10 +101,19 @@ mses = []
 maes = []
 
 for ii in range(args.itr):
+    
+    # 设置随机种子
+    random_seed = args.random_seed
+    random.seed(random_seed)
+    torch.manual_seed(random_seed)
+    np.random.seed(random_seed)
 
-    setting = '{}_sl{}_ll{}_pl{}_dm{}_nh{}_el{}_gl{}_df{}_eb{}_itr{}'.format(args.model_id, 336, args.label_len, args.pred_len,
+    # setting = '{}_sl{}_ll{}_pl{}_dm{}_nh{}_el{}_gl{}_df{}_eb{}_itr{}'.format(args.model_id, 336, args.label_len, args.pred_len,
+    #                                                                 args.d_model, args.n_heads, args.e_layers, args.gpt_layers, 
+    #                                                                 args.d_ff, args.embed, ii)
+    setting = '{}_sl{}_ll{}_pl{}_dm{}_nh{}_el{}_gl{}_df{}_eb{}_seed{}_itr{}'.format(args.model_id, 336, args.label_len, args.pred_len,
                                                                     args.d_model, args.n_heads, args.e_layers, args.gpt_layers, 
-                                                                    args.d_ff, args.embed, ii)
+                                                                    args.d_ff, args.embed, random_seed, ii)
     path = os.path.join(args.checkpoints, setting)
     if not os.path.exists(path):
         os.makedirs(path)
@@ -109,6 +121,7 @@ for ii in range(args.itr):
     if args.freq == 0:
         args.freq = 'h'
 
+    # 获取数据
     train_data, train_loader = data_provider(args, 'train')
     vali_data, vali_loader = data_provider(args, 'val')
     test_data, test_loader = data_provider(args, 'test')
@@ -122,6 +135,7 @@ for ii in range(args.itr):
     time_now = time.time()
     train_steps = len(train_loader)
 
+    # 构建模型
     if args.model == 'PatchTST':
         model = PatchTST(args, device)
         model.to(device)
@@ -132,6 +146,7 @@ for ii in range(args.itr):
         model = GPT4TS(args, device)
     # mse, mae = test(model, test_data, test_loader, args, device, ii)
 
+    # Adam优化器
     params = model.parameters()
     model_optim = torch.optim.Adam(params, lr=args.learning_rate)
     
@@ -146,8 +161,10 @@ for ii in range(args.itr):
                 return torch.mean(200 * torch.abs(pred - true) / (torch.abs(pred) + torch.abs(true) + 1e-8))
         criterion = SMAPE()
     
+    # 学习率调整策略，这里使用余弦退火曲线方法
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(model_optim, T_max=args.tmax, eta_min=1e-8)
 
+    # 开始训练
     for epoch in range(args.train_epochs):
 
         iter_count = 0
@@ -163,8 +180,12 @@ for ii in range(args.itr):
             batch_x_mark = batch_x_mark.float().to(device)
             batch_y_mark = batch_y_mark.float().to(device)
             
+            # 模型给出输出
+            # print(batch_x.shape)
             outputs = model(batch_x, ii)
+            # print(outputs.shape)
 
+            # 去掉前面label_len的部分，只保留最后长为pred_len的一段
             outputs = outputs[:, -args.pred_len:, :]
             batch_y = batch_y[:, -args.pred_len:, :].to(device)
             loss = criterion(outputs, batch_y)
@@ -177,12 +198,15 @@ for ii in range(args.itr):
                 print('\tspeed: {:.4f}s/iter; left time: {:.4f}s'.format(speed, left_time))
                 iter_count = 0
                 time_now = time.time()
+                
+            # 梯度反向传播，并更新参数
             loss.backward()
             model_optim.step()
 
         
         print("Epoch: {} cost time: {}".format(epoch + 1, time.time() - epoch_time))
 
+        # 每个epoch都计算下这几个loss
         train_loss = np.average(train_loss)
         vali_loss = vali(model, vali_data, vali_loader, criterion, args, device, ii)
         # test_loss = vali(model, test_data, test_loader, criterion, args, device, ii)
@@ -191,11 +215,13 @@ for ii in range(args.itr):
         print("Epoch: {0}, Steps: {1} | Train Loss: {2:.7f} Vali Loss: {3:.7f}".format(
             epoch + 1, train_steps, train_loss, vali_loss))
 
+        # 调整学习率
         if args.cos:
             scheduler.step()
             print("lr = {:.10f}".format(model_optim.param_groups[0]['lr']))
         else:
             adjust_learning_rate(model_optim, epoch + 1, args)
+        # 早停策略
         early_stopping(vali_loss, model, path)
         if early_stopping.early_stop:
             print("Early stopping")
@@ -204,7 +230,9 @@ for ii in range(args.itr):
     best_model_path = path + '/' + 'checkpoint.pth'
     model.load_state_dict(torch.load(best_model_path))
     print("------------------------------------")
-    mse, mae = test(model, test_data, test_loader, args, device, ii)
+    
+    # 最后记录测试集上的mse和mae
+    mse, mae = test(model, test_data, test_loader, args, device, ii, setting)
     mses.append(mse)
     maes.append(mae)
 

@@ -240,6 +240,7 @@ class Dataset_Custom(Dataset):
         self.__read_data__()
         
         self.enc_in = self.data_x.shape[-1]
+        # tot_len表示未将channel展平时的长度
         self.tot_len = len(self.data_x) - self.seq_len - self.pred_len + 1
 
     def __read_data__(self):
@@ -298,19 +299,28 @@ class Dataset_Custom(Dataset):
     def __getitem__(self, index):
         feat_id = index // self.tot_len
         s_begin = index % self.tot_len
+        # print("index", index)
+        # print("tot_len", self.tot_len)
+        # print("feat_id", feat_id)
+        # print("s_begin", s_begin)
         
         s_end = s_begin + self.seq_len
         r_begin = s_end - self.label_len
         r_end = r_begin + self.label_len + self.pred_len
+        # 这里由于将整个数据集沿channel展平了，所以必须要取出当前数据是第几个channel的
         seq_x = self.data_x[s_begin:s_end, feat_id:feat_id+1]
         seq_y = self.data_y[r_begin:r_end, feat_id:feat_id+1]
+        # seq_x = self.data_x[s_begin:s_end]
+        # seq_y = self.data_y[r_begin:r_end]
         seq_x_mark = self.data_stamp[s_begin:s_end]
         seq_y_mark = self.data_stamp[r_begin:r_end]
 
         return seq_x, seq_y, seq_x_mark, seq_y_mark
 
     def __len__(self):
+        # 注意，这里是直接返回总长度的enc_in倍了，相当于读数据的时候就当作channel independence来处理了
         return (len(self.data_x) - self.seq_len - self.pred_len + 1) * self.enc_in
+        # return len(self.data_x) - self.seq_len - self.pred_len + 1
 
     def inverse_transform(self, data):
         return self.scaler.inverse_transform(data)

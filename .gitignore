@@ -10,3 +10,9 @@ Zero-shot_Learning/datasets
 *__pycache__*
 *.ipynb_checkpoints*
 */.DS_Store
+
+
+*.csv
+*.pth
+*.npy
+Long-term_Forecasting/results

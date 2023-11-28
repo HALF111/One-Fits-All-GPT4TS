@@ -12,6 +12,7 @@ from utils.metrics import metric
 
 plt.switch_backend('agg')
 
+# 调整学习率的策略
 def adjust_learning_rate(optimizer, epoch, args):
     # lr = args.learning_rate * (0.2 ** (epoch // 2))
     # if args.decay_fac is None:
@@ -248,13 +249,16 @@ def convert_tsf_to_dataframe(
         )
 
 
+# 验证过程
 def vali(model, vali_data, vali_loader, criterion, args, device, itr):
     total_loss = []
+    # 不同模型eval的层不同
     if args.model == 'PatchTST' or args.model == 'DLinear' or args.model == 'TCN':
         model.eval()
     else:
         model.in_layer.eval()
         model.out_layer.eval()
+    
     with torch.no_grad():
         for i, (batch_x, batch_y, batch_x_mark, batch_y_mark) in tqdm(enumerate(vali_loader)):
             batch_x = batch_x.float().to(device)
@@ -263,7 +267,9 @@ def vali(model, vali_data, vali_loader, criterion, args, device, itr):
             batch_x_mark = batch_x_mark.float().to(device)
             batch_y_mark = batch_y_mark.float().to(device)
 
+            # print(batch_x.shape)
             outputs = model(batch_x, itr)
+            # print(outputs.shape)
             
             # encoder - decoder
             outputs = outputs[:, -args.pred_len:, :]
@@ -275,24 +281,29 @@ def vali(model, vali_data, vali_loader, criterion, args, device, itr):
             loss = criterion(pred, true)
 
             total_loss.append(loss)
+    
     total_loss = np.average(total_loss)
     if args.model == 'PatchTST' or args.model == 'DLinear' or args.model == 'TCN':
         model.train()
     else:
         model.in_layer.train()
         model.out_layer.train()
+    
     return total_loss
 
 def MASE(x, freq, pred, true):
     masep = np.mean(np.abs(x[:, freq:] - x[:, :-freq]))
     return np.mean(np.abs(pred - true) / (masep + 1e-8))
 
-def test(model, test_data, test_loader, args, device, itr):
+# 测试过程
+def test(model, test_data, test_loader, args, device, itr, setting=None):
     preds = []
     trues = []
     # mases = []
 
+    # 全部模型都调成eval
     model.eval()
+    
     with torch.no_grad():
         for i, (batch_x, batch_y, batch_x_mark, batch_y_mark) in tqdm(enumerate(test_loader)):
             
@@ -304,7 +315,9 @@ def test(model, test_data, test_loader, args, device, itr):
             batch_x = batch_x.float().to(device)
             batch_y = batch_y.float()
             
+            # print(batch_x.shape)
             outputs = model(batch_x[:, -args.seq_len:, :], itr)
+            # print(outputs.shape)
             
             # encoder - decoder
             outputs = outputs[:, -args.pred_len:, :]
@@ -320,12 +333,26 @@ def test(model, test_data, test_loader, args, device, itr):
     trues = np.array(trues)
     # mases = np.mean(np.array(mases))
     print('test shape:', preds.shape, trues.shape)
+    
     preds = preds.reshape(-1, preds.shape[-2], preds.shape[-1])
     trues = trues.reshape(-1, trues.shape[-2], trues.shape[-1])
     print('test shape:', preds.shape, trues.shape)
 
+    # 打印在测试集上的结果
     mae, mse, rmse, mape, mspe, smape, nd = metric(preds, trues)
     # print('mae:{:.4f}, mse:{:.4f}, rmse:{:.4f}, smape:{:.4f}, mases:{:.4f}'.format(mae, mse, rmse, smape, mases))
     print('mae:{:.4f}, mse:{:.4f}, rmse:{:.4f}, smape:{:.4f}'.format(mae, mse, rmse, smape))
+
+    # 把结果保存一下
+    # result save
+    import os
+    if setting is not None:
+        folder_path = './results/' + setting + '/'
+        if not os.path.exists(folder_path):
+            os.makedirs(folder_path)
+
+        np.save(folder_path + 'pred.npy', preds)
+        np.save(folder_path + 'true.npy', trues)
+        # np.save(folder_path + 'x.npy', inputx)
 
     return mse, mae

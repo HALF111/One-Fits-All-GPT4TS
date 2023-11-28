@@ -187,6 +187,8 @@ class PatchTST(nn.Module):
     def forward(self, x_enc, itr):
         B, L, M = x_enc.shape
 
+        # 使用的是普通的Instance Normalization，而非RevIN？
+        # 因为没有加可训练参数
         means = x_enc.mean(1, keepdim=True).detach()
         x_enc = x_enc - means
         stdev = torch.sqrt(torch.var(x_enc, dim=1, keepdim=True, unbiased=False)+ 1e-5).detach() 
@@ -196,13 +198,18 @@ class PatchTST(nn.Module):
         x_enc = x_enc.unfold(dimension=-1, size=self.patch_size, step=self.stride)
         x_enc = rearrange(x_enc, 'b m n p -> (b m) n p')
 
+        # 先做embedding
         enc_out = self.enc_embedding(x_enc)
 
+        # 再过encoder层
         enc_out, attns = self.encoder(enc_out, attn_mask=None)
         
+        # 最后过一个线性的映射层
         enc_out = self.proj(enc_out.reshape(B*M, -1))
         enc_out = rearrange(enc_out, '(b m) l -> b l m', m=M)
+        
         # revin
+        # 再将之前norm后的数据denorm回来
         enc_out = enc_out[:, -self.pred_len:, :]
         enc_out = enc_out * stdev
         enc_out = enc_out + means
