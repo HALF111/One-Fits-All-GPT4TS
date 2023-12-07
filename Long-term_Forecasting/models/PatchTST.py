@@ -32,10 +32,12 @@ class AttentionLayer(nn.Module):
         _, S, _ = keys.shape
         H = self.n_heads
         
+        # 将QKV映射到对应的d_q、d_k、d_v维度上，并映射h次
         queries = self.query_projection(queries).view(B, L, H, -1)
         keys = self.key_projection(keys).view(B, S, H, -1)
         values = self.value_projection(values).view(B, S, H, -1)
 
+        # 计算得到注意力结果
         out, attn = self.inner_attention(
             queries,
             keys,
@@ -45,6 +47,7 @@ class AttentionLayer(nn.Module):
         )
         out = out.view(B, L, -1)
 
+        # 将多个头的输出concat后，映射回d_model维度
         return self.out_projection(out), attn
 
 class FullAttention(nn.Module):
@@ -65,18 +68,22 @@ class FullAttention(nn.Module):
         _, S, _, D = values.shape
         scale = self.scale or 1. / sqrt(E)
         
+        # Q和K之间点积计算得到注意力分数
         scores = torch.einsum("blhe,bshe->bhls", queries, keys)
 
         if self.mask_flag:
             if attn_mask is None:
                 attn_mask = TriangularCausalMask(B, L, device=queries.device)
+            # 做mask的注意力
             scores.masked_fill_(attn_mask.mask, -np.inf)
 
         if attn_bias is not None:
             attn_bias = attn_bias.permute(0, 3, 1, 2)
             A = self.dropout(torch.softmax(scores * scale + attn_bias, dim=-1))
         else:
+            # scale后再做softmax，得到注意力分数
             A = self.dropout(torch.softmax(scores * scale, dim=-1))
+        # 分数和values加权求和，得到输出的V矩阵
         V = torch.einsum("bhls,bshd->blhd", A, values)
 
         if self.output_attention:
@@ -97,15 +104,19 @@ class EncoderLayer(nn.Module):
         self.activation = F.relu if activation == "relu" else F.gelu
 
     def forward(self, x, attn_mask=None, attn_bias=None):
+        # 自注意力
         new_x, attn = self.attention(
             x, x, x,
             attn_mask=attn_mask,
             attn_bias=attn_bias
         )
+        # 先dropout，再add（残差连接），再norm（这里是batchnorm？？？）
         x = x + self.dropout(new_x)
-        y = x = self.norm1(x.permute(0, 2, 1)).permute(0, 2, 1)
+        y = x = self.norm1(x.permute(0, 2, 1)).permute(0, 2, 1)  # permute也是因为batchnorm而非layernorm
+        # 过MLP层，一维卷积类似于MLP？
         y = self.dropout(self.activation(self.conv1(y.transpose(-1, 1))))
         y = self.dropout(self.conv2(y).transpose(-1, 1))
+        # MLP也有add（残差连接）和norm流程
         y = x + y
         y = self.norm2(y.permute(0, 2, 1)).permute(0, 2, 1)
         return y, attn
@@ -122,6 +133,7 @@ class Encoder(nn.Module):
         attns = []
         if self.conv_layers is not None:
             for attn_layer, conv_layer in zip(self.attn_layers, self.conv_layers):
+                # 如果有conv，那么一层注意力、一层卷积交替进行
                 x, attn = attn_layer(x, attn_mask=attn_mask)
                 x = conv_layer(x)
                 attns.append(attn)
@@ -129,9 +141,12 @@ class Encoder(nn.Module):
             attns.append(attn)
         else:
             for attn_layer in self.attn_layers:
+                # 没有conv的话，就只需要做注意力（里面包含了FFN）即可了。
                 x, attn = attn_layer(x, attn_mask=attn_mask, attn_bias=attn_bias)
                 attns.append(attn)
 
+        # 有norm的话输出前再做一次norm
+        # 这里由于batchnorm代替了layernorm，所以要做一次转置？
         if self.norm is not None:
             # x = self.norm(x)
             x = self.norm(x.permute(0, 2, 1)).permute(0, 2, 1)

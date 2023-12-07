@@ -19,6 +19,7 @@ class GPT4TS(nn.Module):
         self.stride = configs.stride
         self.patch_num = (configs.seq_len - self.patch_size) // self.stride + 1
 
+        # 对patch后的数据再做padding
         self.padding_patch_layer = nn.ReplicationPad1d((0, self.stride)) 
         self.patch_num += 1
         
@@ -27,14 +28,17 @@ class GPT4TS(nn.Module):
                 # 加载有预训练参数的GPT2模型
                 self.gpt2 = GPT2Model.from_pretrained('gpt2', output_attentions=True, output_hidden_states=True)  # loads a pretrained GPT-2 base model
             else:
-                # 否则生辰一个随机初始化的模型
+                # 否则生成一个随机初始化的模型
                 print("------------------no pretrain------------------")
                 self.gpt2 = GPT2Model(GPT2Config())
             # 只保留我们需要的那些层？
+            # 例如论文中为保留3层或6层的GPT模型
             self.gpt2.h = self.gpt2.h[:configs.gpt_layers]
             print("gpt2 = {}".format(self.gpt2))
         
         # 输入输出层
+        # 输入做embedding，将各个patch映射到中间维度
+        # 输出则是将patch_num个d_model的中间向量战平后、映射到pred_len的预测输出中
         self.in_layer = nn.Linear(configs.patch_size, configs.d_model)
         self.out_layer = nn.Linear(configs.d_model * self.patch_num, configs.pred_len)
         
@@ -46,7 +50,7 @@ class GPT4TS(nn.Module):
                 else:
                     param.requires_grad = False
 
-        # 将每一层都移到当前的device上
+        # 将每一层都移到当前的device上，并设置为训练模式
         for layer in (self.gpt2, self.in_layer, self.out_layer):
             layer.to(device=device)
             layer.train()
@@ -55,6 +59,7 @@ class GPT4TS(nn.Module):
 
 
     def forward(self, x, itr):
+        # 先记录下输入数据的维度为[batch, seq_len, channel]
         B, L, M = x.shape
 
         # 使用的是普通的Instance Normalization，而非RevIN？
@@ -72,12 +77,14 @@ class GPT4TS(nn.Module):
         x = rearrange(x, 'b m n p -> (b m) n p')
 
         # 先过输入层
+        # 输入层会做embedding，将各个patch映射到中间维度
         outputs = self.in_layer(x)
         # 然后经过GPT2模型
         if self.is_gpt:
             outputs = self.gpt2(inputs_embeds=outputs).last_hidden_state
 
         # 最后经过输出层
+        # 输出层则将patch_num个d_model的中间向量战平后、映射到pred_len的预测输出中
         outputs = self.out_layer(outputs.reshape(B*M, -1))
         outputs = rearrange(outputs, '(b m) l -> b l m', b=B)
 

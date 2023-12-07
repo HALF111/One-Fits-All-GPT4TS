@@ -5,18 +5,21 @@ model=GPT4TS
 
 gpt_layer=6
 
-seed_lst=$(seq 100)
+
+test_train_num=200
+selected_data_num=3
+adapted_lr_times=0.001
+
 
 # for pred_len in 24 36 48 60
 for pred_len in 24
 do
 for percent in 100
 do
-# for random_seed in $seed_lst
-# do
-# echo $random_seed
+echo $random_seed
 
-python main.py \
+# python main.py \
+python main_test.py \
     --root_path ./datasets/illness/ \
     --data_path national_illness.csv \
     --model_id illness_$model'_'$gpt_layer'_'$seq_len'_'$pred_len'_'$percent \
@@ -41,8 +44,12 @@ python main.py \
     --itr 1 \
     --model $model \
     --is_gpt 1 \
-    # --random_seed $random_seed
-# done
+    --run_select_with_distance \
+    --test_train_num $test_train_num \
+    --selected_data_num $selected_data_num \
+    --adapted_lr_times $adapted_lr_times \
+    --adapt_cycle \
+    --train_epochs 0
 done
 done
 

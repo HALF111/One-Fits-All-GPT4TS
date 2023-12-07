@@ -164,72 +164,72 @@ for ii in range(args.itr):
     # 学习率调整策略，这里使用余弦退火曲线方法
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(model_optim, T_max=args.tmax, eta_min=1e-8)
 
-    # 开始训练
-    for epoch in range(args.train_epochs):
+    # # 开始训练
+    # for epoch in range(args.train_epochs):
 
-        iter_count = 0
-        train_loss = []
-        epoch_time = time.time()
-        for i, (batch_x, batch_y, batch_x_mark, batch_y_mark) in tqdm(enumerate(train_loader)):
+    #     iter_count = 0
+    #     train_loss = []
+    #     epoch_time = time.time()
+    #     for i, (batch_x, batch_y, batch_x_mark, batch_y_mark) in tqdm(enumerate(train_loader)):
 
-            iter_count += 1
-            model_optim.zero_grad()
-            batch_x = batch_x.float().to(device)
+    #         iter_count += 1
+    #         model_optim.zero_grad()
+    #         batch_x = batch_x.float().to(device)
 
-            batch_y = batch_y.float().to(device)
-            batch_x_mark = batch_x_mark.float().to(device)
-            batch_y_mark = batch_y_mark.float().to(device)
+    #         batch_y = batch_y.float().to(device)
+    #         batch_x_mark = batch_x_mark.float().to(device)
+    #         batch_y_mark = batch_y_mark.float().to(device)
             
-            # 模型给出输出
-            # print(batch_x.shape)
-            outputs = model(batch_x, ii)
-            # print(outputs.shape)
+    #         # 模型给出输出
+    #         # print(batch_x.shape)
+    #         outputs = model(batch_x, ii)
+    #         # print(outputs.shape)
 
-            # 去掉前面label_len的部分，只保留最后长为pred_len的一段
-            outputs = outputs[:, -args.pred_len:, :]
-            batch_y = batch_y[:, -args.pred_len:, :].to(device)
-            loss = criterion(outputs, batch_y)
-            train_loss.append(loss.item())
+    #         # 去掉前面label_len的部分，只保留最后长为pred_len的一段
+    #         outputs = outputs[:, -args.pred_len:, :]
+    #         batch_y = batch_y[:, -args.pred_len:, :].to(device)
+    #         loss = criterion(outputs, batch_y)
+    #         train_loss.append(loss.item())
 
-            if (i + 1) % 1000 == 0:
-                print("\titers: {0}, epoch: {1} | loss: {2:.7f}".format(i + 1, epoch + 1, loss.item()))
-                speed = (time.time() - time_now) / iter_count
-                left_time = speed * ((args.train_epochs - epoch) * train_steps - i)
-                print('\tspeed: {:.4f}s/iter; left time: {:.4f}s'.format(speed, left_time))
-                iter_count = 0
-                time_now = time.time()
+    #         if (i + 1) % 1000 == 0:
+    #             print("\titers: {0}, epoch: {1} | loss: {2:.7f}".format(i + 1, epoch + 1, loss.item()))
+    #             speed = (time.time() - time_now) / iter_count
+    #             left_time = speed * ((args.train_epochs - epoch) * train_steps - i)
+    #             print('\tspeed: {:.4f}s/iter; left time: {:.4f}s'.format(speed, left_time))
+    #             iter_count = 0
+    #             time_now = time.time()
                 
-            # 梯度反向传播，并更新参数
-            loss.backward()
-            model_optim.step()
+    #         # 梯度反向传播，并更新参数
+    #         loss.backward()
+    #         model_optim.step()
 
         
-        print("Epoch: {} cost time: {}".format(epoch + 1, time.time() - epoch_time))
+    #     print("Epoch: {} cost time: {}".format(epoch + 1, time.time() - epoch_time))
 
-        # 每个epoch都计算下这几个loss
-        train_loss = np.average(train_loss)
-        vali_loss = vali(model, vali_data, vali_loader, criterion, args, device, ii)
-        # test_loss = vali(model, test_data, test_loader, criterion, args, device, ii)
-        # print("Epoch: {0}, Steps: {1} | Train Loss: {2:.7f} Vali Loss: {3:.7f}, Test Loss: {4:.7f}".format(
-        #     epoch + 1, train_steps, train_loss, vali_loss, test_loss))
-        print("Epoch: {0}, Steps: {1} | Train Loss: {2:.7f} Vali Loss: {3:.7f}".format(
-            epoch + 1, train_steps, train_loss, vali_loss))
+    #     # 每个epoch都计算下这几个loss
+    #     train_loss = np.average(train_loss)
+    #     vali_loss = vali(model, vali_data, vali_loader, criterion, args, device, ii)
+    #     # test_loss = vali(model, test_data, test_loader, criterion, args, device, ii)
+    #     # print("Epoch: {0}, Steps: {1} | Train Loss: {2:.7f} Vali Loss: {3:.7f}, Test Loss: {4:.7f}".format(
+    #     #     epoch + 1, train_steps, train_loss, vali_loss, test_loss))
+    #     print("Epoch: {0}, Steps: {1} | Train Loss: {2:.7f} Vali Loss: {3:.7f}".format(
+    #         epoch + 1, train_steps, train_loss, vali_loss))
 
-        # 调整学习率
-        if args.cos:
-            scheduler.step()
-            print("lr = {:.10f}".format(model_optim.param_groups[0]['lr']))
-        else:
-            adjust_learning_rate(model_optim, epoch + 1, args)
-        # 早停策略
-        early_stopping(vali_loss, model, path)
-        if early_stopping.early_stop:
-            print("Early stopping")
-            break
+    #     # 调整学习率
+    #     if args.cos:
+    #         scheduler.step()
+    #         print("lr = {:.10f}".format(model_optim.param_groups[0]['lr']))
+    #     else:
+    #         adjust_learning_rate(model_optim, epoch + 1, args)
+    #     # 早停策略
+    #     early_stopping(vali_loss, model, path)
+    #     if early_stopping.early_stop:
+    #         print("Early stopping")
+    #         break
 
-    best_model_path = path + '/' + 'checkpoint.pth'
-    model.load_state_dict(torch.load(best_model_path))
-    print("------------------------------------")
+    # best_model_path = path + '/' + 'checkpoint.pth'
+    # model.load_state_dict(torch.load(best_model_path))
+    # print("------------------------------------")
     
     # 最后记录测试集上的mse和mae
     mse, mae = test(model, test_data, test_loader, args, device, ii, setting)
